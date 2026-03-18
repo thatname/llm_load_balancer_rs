@@ -1,4 +1,5 @@
 mod api;
+mod chat_ui;
 mod image_utils;
 mod load_balancer;
 mod models;
@@ -8,6 +9,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use chat_ui::chat_ui_handler;
 use load_balancer::LoadBalancer;
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -52,6 +54,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_handler))
         .route("/set_default", get(set_default_get_handler))
         .route("/set_default", post(set_default_post_handler))
+        .route("/chat", get(chat_ui_handler))
         .layer(
             ServiceBuilder::new()
                 .layer(CorsLayer::new().allow_origin(Any).allow_methods(Any).allow_headers(Any)),
@@ -75,11 +78,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Server stopped.");
     });
 
-    // Open browser to /set_default page
+    // Open browser to /chat page
     let url = format!("http://localhost:{}", port);
-    info!("Opening browser to: {}/set_default", url);
+    info!("Opening browser to: {}", url);
     
-    if let Err(e) = open::that(format!("{}/set_default", url)) {
+    if let Err(e) = open::that(format!("{}/chat", url)) {
         error!("Failed to open browser: {}", e);
     }
 
