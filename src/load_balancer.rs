@@ -181,4 +181,10 @@ impl LoadBalancer {
     pub fn get_provider_models(&self, index: usize) -> Option<Vec<ModelInfo>> {
         self.provider_models.get(&index).map(|v| v.clone())
     }
+
+    /// Refresh the model list from all providers
+    pub async fn refresh_models(&self) -> Result<()> {
+        info!("Refreshing model list from all providers...");
+        self.fetch_all_models().await
+    }
 }

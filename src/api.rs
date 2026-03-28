@@ -47,6 +47,7 @@ pub async fn chat_completions_handler(
     tracing::info!("Received chat completion request for model: {}", model_name);
 
     let is_streaming = body.get("stream").and_then(|v| v.as_bool()).unwrap_or(false);
+
     let mut last_error = None;
 
     // Check model support
@@ -83,10 +84,10 @@ pub async fn chat_completions_handler(
 
     // Try all providers with load balancing logic
     let num_providers = load_balancer.get_config().providers.len();
-    
+
     // Check if we know which provider supports this model
     let known_provider_index = load_balancer.find_provider_for_model(&selected_model);
-    
+
     for _attempt in 0..num_providers {
         let provider_idx = load_balancer.get_current_provider_index();
 
@@ -95,7 +96,8 @@ pub async fn chat_completions_handler(
             if provider_idx != known_idx {
                 tracing::debug!(
                     "Skipping provider {} as it doesn't support model '{}'",
-                    provider_idx, selected_model
+                    provider_idx,
+                    selected_model
                 );
                 load_balancer.advance_provider_index();
                 continue;
@@ -112,17 +114,18 @@ pub async fn chat_completions_handler(
 
         tracing::info!(
             "Attempting provider {}: {}",
-            provider_idx, provider.base_url
+            provider_idx,
+            provider.base_url
         );
 
         // Build the request body with provider-specific extra params
         let mut request_body = body.clone();
-        
+
         // If the original model was "default", replace it with the actual default model name
         if model_name == "default" {
             request_body["model"] = serde_json::json!(selected_model);
         }
-        
+
         for (key, value) in &provider.extra_params {
             if key != "base_url" && key != "key" && key != "model_regex" {
                 if let Some(value) = serde_json::to_value(value).ok() {
@@ -134,7 +137,6 @@ pub async fn chat_completions_handler(
         // Forward the request to the provider
         let url = format!("{}/chat/completions", provider.base_url);
         let client = load_balancer.get_http_client();
-
         let request_builder = client
             .post(&url)
             .header("Authorization", format!("Bearer {}", provider.key))
@@ -143,7 +145,6 @@ pub async fn chat_completions_handler(
         match request_builder.send().await {
             Ok(response) => {
                 let status = response.status();
-
                 if status.is_success() {
                     tracing::info!(
                         "Successfully forwarded request to provider {}",
@@ -218,6 +219,7 @@ pub async fn chat_completions_handler(
     // All providers failed
     let error_msg = last_error.unwrap_or_else(|| "Unknown error".to_string());
     error!("All providers failed. Last error: {}", error_msg);
+
     (
         StatusCode::INTERNAL_SERVER_ERROR,
         Json(ErrorResponse {
@@ -235,7 +237,6 @@ pub async fn models_handler(State(state): State<AppState>) -> Response {
 
     for (index, provider) in config.providers.iter().enumerate() {
         let models = load_balancer.get_provider_models(index).unwrap_or_default();
-
         let provider_info = serde_json::json!({
             "provider_index": index,
             "base_url": provider.base_url,
@@ -248,7 +249,6 @@ pub async fn models_handler(State(state): State<AppState>) -> Response {
                 })
             }).collect::<Vec<_>>()
         });
-
         formatted_models.push(provider_info);
     }
 
@@ -265,12 +265,11 @@ pub async fn models_handler(State(state): State<AppState>) -> Response {
 pub async fn openai_models_handler(State(state): State<AppState>) -> Response {
     let load_balancer = &state.load_balancer;
     let default_model = load_balancer.get_default_model().await;
-    
+
     // Get all available models
     let all_models = load_balancer.get_available_models();
-    
     let mut models_data = Vec::new();
-    
+
     // If there's a default model, add it first
     if let Some(ref default) = default_model {
         // Find the provider for the default model to get full model info
@@ -287,7 +286,7 @@ pub async fn openai_models_handler(State(state): State<AppState>) -> Response {
             }
         }
     }
-    
+
     // Add all other models
     for (model_name, provider_idx) in all_models {
         // Skip if this is the default model (already added)
@@ -296,7 +295,7 @@ pub async fn openai_models_handler(State(state): State<AppState>) -> Response {
                 continue;
             }
         }
-        
+
         // Get full model info from provider
         if let Some(provider_models) = load_balancer.get_provider_models(provider_idx) {
             if let Some(model_info) = provider_models.iter().find(|m| m.id == model_name) {
@@ -309,7 +308,7 @@ pub async fn openai_models_handler(State(state): State<AppState>) -> Response {
             }
         }
     }
-    
+
     Json(serde_json::json!({
         "object": "list",
         "data": models_data
@@ -336,6 +335,12 @@ pub struct SetDefaultRequest {
 
 pub async fn set_default_get_handler(State(state): State<AppState>) -> impl IntoResponse {
     let load_balancer = &state.load_balancer;
+
+    // Refresh model list from all providers when opening the settings page
+    if let Err(e) = load_balancer.refresh_models().await {
+        tracing::error!("Failed to refresh models: {}", e);
+    }
+
     let mut available_models = load_balancer.get_available_models();
     let current_default = load_balancer.get_default_model().await;
 
@@ -343,7 +348,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
     available_models.sort_by(|a, b| a.0.cmp(&b.0));
 
     let mut models_html = String::new();
-    
+
     // Add "None" option
     let none_selected = if current_default.is_none() {
         "checked"
@@ -373,7 +378,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
         } else {
             ""
         };
-        
+
         models_html.push_str(&format!(
             r#"<div class="model-option">
                 <input type="radio" id="{}" name="default_model" value="{}" {}>
@@ -382,7 +387,12 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
                     <div class="provider-url">Provider: {}</div>
                 </label>
             </div>"#,
-            model_name.replace("/", "_"), model_name, selected, model_name.replace("/", "_"), model_name, provider_url
+            model_name.replace("/", "_"),
+            model_name,
+            selected,
+            model_name.replace("/", "_"),
+            model_name,
+            provider_url
         ));
     }
 
@@ -403,6 +413,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             padding: 2rem;
             background-color: #f5f7fa;
         }}
+
         .container {{
             background: white;
             padding: 2rem;
@@ -412,6 +423,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             height: 100%;
             margin-top: 2rem;
         }}
+
         h1 {{
             margin-top: 0;
             margin-bottom: 1.5rem;
@@ -420,9 +432,11 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             border-bottom: 2px solid #e2e8f0;
             padding-bottom: 1rem;
         }}
+
         .filter-container {{
             margin-bottom: 1.5rem;
         }}
+
         #model-filter {{
             width: 100%;
             padding: 0.75rem;
@@ -433,14 +447,17 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             transition: border-color 0.2s, box-shadow 0.2s;
             box-sizing: border-box;
         }}
+
         #model-filter:focus {{
             outline: none;
             border-color: #3182ce;
             box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
         }}
+
         #model-filter::placeholder {{
             color: #a0aec0;
         }}
+
         .models-list {{
             max-height: 850px;
             overflow-y: auto;
@@ -450,6 +467,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             margin-bottom: 1.5rem;
             background-color: #fafafa;
         }}
+
         .model-option {{
             margin-bottom: 0.5rem;
             padding: 0.5rem 0.75rem;
@@ -462,14 +480,17 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             align-items: center;
             gap: 0.75rem;
         }}
+
         .model-option:hover {{
             background-color: #f7fafc;
             border-color: #cbd5e0;
         }}
+
         .model-option input[type="radio"] {{
             cursor: pointer;
             margin: 0;
         }}
+
         .model-option label {{
             cursor: pointer;
             display: flex;
@@ -478,18 +499,21 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             margin: 0;
             flex: 1;
         }}
+
         .model-name {{
             font-weight: 600;
             color: #2d3748;
             font-size: 0.95rem;
             margin: 0;
         }}
+
         .provider-url {{
             font-size: 0.8rem;
             color: #718096;
             font-family: monospace;
             margin: 0;
         }}
+
         button {{
             width: 100%;
             padding: 0.75rem;
@@ -502,20 +526,25 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             font-weight: 500;
             transition: background-color 0.2s;
         }}
+
         button:hover {{
             background-color: #2c5282;
         }}
+
         .models-list::-webkit-scrollbar {{
             width: 8px;
         }}
+
         .models-list::-webkit-scrollbar-track {{
             background: #f1f1f1;
             border-radius: 4px;
         }}
+
         .models-list::-webkit-scrollbar-thumb {{
             background: #cbd5e0;
             border-radius: 4px;
         }}
+
         .models-list::-webkit-scrollbar-thumb:hover {{
             background: #a0aec0;
         }}
@@ -528,7 +557,7 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             <div class="filter-container">
                 <input type="text" id="model-filter" placeholder="Filter models by name..." autocomplete="off">
             </div>
-        <div class="models-list">
+            <div class="models-list">
                 {}
             </div>
         </form>
@@ -541,7 +570,6 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
 
             filterInput.addEventListener('input', function() {{
                 const filterText = this.value.toLowerCase();
-
                 modelOptions.forEach(function(option) {{
                     const modelName = option.querySelector('.model-name').textContent.toLowerCase();
                     if (modelName.includes(filterText)) {{
@@ -642,6 +670,7 @@ pub async fn set_default_post_handler(
     Form(payload): Form<SetDefaultRequest>,
 ) -> impl IntoResponse {
     let load_balancer = &state.load_balancer;
+
     let new_default = if payload.default_model.is_empty() {
         None
     } else {
@@ -649,9 +678,9 @@ pub async fn set_default_post_handler(
     };
 
     load_balancer.set_default_model(new_default).await;
-    
+
     // Redirect back to GET page
-     Response::builder()
+    Response::builder()
         .status(StatusCode::SEE_OTHER)
         .header("Location", "/set_default")
         .body(Body::empty())
