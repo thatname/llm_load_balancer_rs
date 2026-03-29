@@ -111,6 +111,38 @@ fn generate_chat_html(default_model_name: &str) -> String {
         .tps-badge {{ background-color: rgba(16, 163, 127, 0.2); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-weight: 500; }}
         .model-name-badge {{ background-color: rgba(84, 54, 218, 0.2); color: #a78bfa; padding: 2px 8px; border-radius: 4px; }}
         .message-text {{ font-size: 0.9375rem; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }}
+        .reasoning-content {{
+            background-color: rgba(168, 85, 247, 0.1);
+            border-left: 3px solid rgba(168, 85, 247, 0.5);
+            padding: 12px;
+            margin-bottom: 12px;
+            border-radius: 0 4px 4px 0;
+            font-size: 0.875rem;
+            line-height: 1.6;
+            color: #a78bfa;
+            font-style: italic;
+        }}
+        .reasoning-toggle {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            cursor: pointer;
+            user-select: none;
+        }}
+        .reasoning-toggle:hover {{
+            color: var(--text-primary);
+        }}
+        .reasoning-toggle svg {{
+            width: 14px;
+            height: 14px;
+            transition: transform 0.2s;
+        }}
+        .reasoning-toggle.expanded svg {{
+            transform: rotate(180deg);
+        }}
         .message-images {{ display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }}
         .message-images img {{ max-width: 200px; max-height: 200px; border-radius: 8px; object-fit: cover; cursor: pointer; }}
         .input-container {{ padding: 16px; background-color: var(--bg-primary); border-top: 1px solid var(--border); }}
@@ -382,7 +414,7 @@ fn generate_chat_html(default_model_name: &str) -> String {
                 // Remove loading
                 loadingEl.remove();
                 
-                // Create assistant message element
+                // Create assistant message element with reasoning support
                 const assistantEl = document.createElement('div');
                 assistantEl.className = 'message assistant';
                 assistantEl.innerHTML = `
@@ -395,6 +427,15 @@ fn generate_chat_html(default_model_name: &str) -> String {
                                 <span class="tps-badge" id="tps-info"></span>
                             </div>
                         </div>
+                        <div class="reasoning-wrapper" id="reasoning-wrapper" style="display: none;">
+                            <div class="reasoning-toggle" id="reasoning-toggle">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                </svg>
+                                <span>View reasoning</span>
+                            </div>
+                            <div class="reasoning-content" id="reasoning-content" style="display: none;"></div>
+                        </div>
                         <div class="message-text" id="assistant-text"></div>
                     </div>
                 `;
@@ -403,8 +444,13 @@ fn generate_chat_html(default_model_name: &str) -> String {
                 const textEl = document.getElementById('assistant-text');
                 const modelEl = document.getElementById('model-name');
                 const tpsEl = document.getElementById('tps-info');
+                const reasoningWrapper = document.getElementById('reasoning-wrapper');
+                const reasoningToggle = document.getElementById('reasoning-toggle');
+                const reasoningContent = document.getElementById('reasoning-content');
                 
                 let fullContent = '';
+                let fullReasoning = '';
+                let hasReasoning = false;
                 let modelName = '';
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
@@ -432,16 +478,33 @@ fn generate_chat_html(default_model_name: &str) -> String {
                                 
                                 // Get content delta
                                 const delta = json.choices?.[0]?.delta;
+                                
+                                // Handle reasoning content
+                                if (delta?.reasoning_content) {{
+                                    hasReasoning = true;
+                                    fullReasoning += delta.reasoning_content;
+                                    reasoningContent.textContent = fullReasoning;
+                                }}
+                                
+                                // Handle regular content
                                 if (delta?.content) {{
                                     fullContent += delta.content;
                                     textEl.textContent = fullContent;
-                                    scrollToBottom();
                                 }}
                             }} catch (e) {{
                                 // Ignore parse errors for incomplete chunks
                             }}
                         }}
                     }}
+                }}
+                
+                // Show reasoning section if present
+                if (hasReasoning && fullReasoning.trim().length > 0) {{
+                    reasoningWrapper.style.display = 'flex';
+                    reasoningToggle.addEventListener('click', function() {{
+                        const isExpanded = reasoningToggle.classList.toggle('expanded');
+                        reasoningContent.style.display = isExpanded ? 'block' : 'none';
+                    }});
                 }}
                 
                 // Calculate TPS
@@ -457,6 +520,9 @@ fn generate_chat_html(default_model_name: &str) -> String {
                 textEl.removeAttribute('id');
                 modelEl.removeAttribute('id');
                 tpsEl.removeAttribute('id');
+                if (reasoningWrapper) reasoningWrapper.removeAttribute('id');
+                if (reasoningToggle) reasoningToggle.removeAttribute('id');
+                if (reasoningContent) reasoningContent.removeAttribute('id');
                 
             }} catch (error) {{
                 loadingEl.remove();
