@@ -455,6 +455,8 @@ fn generate_chat_html(default_model_name: &str) -> String {
                 const reader = response.body.getReader();
                 const decoder = new TextDecoder();
                 
+                let reasoningToggleAttached = false;
+                
                 while (true) {{
                     const {{ done, value }} = await reader.read();
                     if (done) break;
@@ -481,7 +483,18 @@ fn generate_chat_html(default_model_name: &str) -> String {
                                 
                                 // Handle reasoning content
                                 if (delta?.reasoning_content) {{
-                                    hasReasoning = true;
+                                    if (!hasReasoning) {{
+                                        // First time seeing reasoning - show the toggle
+                                        hasReasoning = true;
+                                        reasoningWrapper.style.display = 'flex';
+                                        if (!reasoningToggleAttached) {{
+                                            reasoningToggle.addEventListener('click', function() {{
+                                                const isExpanded = reasoningToggle.classList.toggle('expanded');
+                                                reasoningContent.style.display = isExpanded ? 'block' : 'none';
+                                            }});
+                                            reasoningToggleAttached = true;
+                                        }}
+                                    }}
                                     fullReasoning += delta.reasoning_content;
                                     reasoningContent.textContent = fullReasoning;
                                 }}
@@ -496,15 +509,6 @@ fn generate_chat_html(default_model_name: &str) -> String {
                             }}
                         }}
                     }}
-                }}
-                
-                // Show reasoning section if present
-                if (hasReasoning && fullReasoning.trim().length > 0) {{
-                    reasoningWrapper.style.display = 'flex';
-                    reasoningToggle.addEventListener('click', function() {{
-                        const isExpanded = reasoningToggle.classList.toggle('expanded');
-                        reasoningContent.style.display = isExpanded ? 'block' : 'none';
-                    }});
                 }}
                 
                 // Calculate TPS
