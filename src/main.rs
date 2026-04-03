@@ -4,7 +4,10 @@ mod image_utils;
 mod load_balancer;
 mod models;
 
-use api::{chat_completions_handler, health_handler, models_handler, openai_models_handler, set_default_get_handler, set_default_post_handler, AppState};
+use api::{
+    anthropic_messages_handler, chat_completions_handler, health_handler, models_handler,
+    openai_models_handler, set_default_get_handler, set_default_post_handler, AppState,
+};
 use axum::{
     routing::{get, post},
     Router,
@@ -49,6 +52,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Build our application with CORS
     let app = Router::new()
         .route("/v1/chat/completions", post(chat_completions_handler))
+        .route("/v1/messages", post(anthropic_messages_handler))
         .route("/v1/models", get(openai_models_handler))
         .route("/models", get(models_handler))
         .route("/health", get(health_handler))
