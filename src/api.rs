@@ -340,6 +340,32 @@ pub async fn health_handler() -> Response {
     .into_response()
 }
 
+pub async fn refresh_models_handler(State(state): State<AppState>) -> Response {
+    let load_balancer = &state.load_balancer;
+
+    match load_balancer.refresh_models().await {
+        Ok(_) => {
+            tracing::info!("Successfully refreshed models from all providers");
+            Json(serde_json::json!({
+                "success": true,
+                "message": "Models refreshed successfully"
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            tracing::error!("Failed to refresh models: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to refresh models: {}", e)
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
 use axum::response::Html;
 use axum::extract::Form;
 use serde::Deserialize;
@@ -351,11 +377,6 @@ pub struct SetDefaultRequest {
 
 pub async fn set_default_get_handler(State(state): State<AppState>) -> impl IntoResponse {
     let load_balancer = &state.load_balancer;
-
-    // Refresh model list from all providers when opening the settings page
-    if let Err(e) = load_balancer.refresh_models().await {
-        tracing::error!("Failed to refresh models: {}", e);
-    }
 
     let mut available_models = load_balancer.get_available_models();
     let current_default = load_balancer.get_default_model().await;
@@ -557,10 +578,43 @@ pub async fn set_default_get_handler(State(state): State<AppState>) -> impl Into
             <div class="models-list">
                 {}
             </div>
-        </form>
-    </div>
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {{
+</form>
+<button id="refresh-btn" onclick="refreshModels()" style="margin-top: 1rem; width: auto; background-color: #48bb78;">Refresh Provider Models</button>
+</div>
+<script>
+async function refreshModels() {{
+const refreshBtn = document.getElementById('refresh-btn');
+const originalText = refreshBtn.textContent;
+refreshBtn.disabled = true;
+refreshBtn.textContent = 'Refreshing...';
+document.querySelectorAll('.model-option').forEach(function(opt) {{
+opt.style.opacity = '0.5';
+}});
+try {{
+const response = await fetch('/refresh_models', {{ method: 'POST' }});
+if (response.ok) {{
+window.location.reload();
+}} else {{
+const data = await response.json();
+alert(data.error || 'Failed to refresh models');
+refreshBtn.disabled = false;
+refreshBtn.textContent = originalText;
+document.querySelectorAll('.model-option').forEach(function(opt) {{
+opt.style.opacity = '1';
+}});
+}}
+}} catch (error) {{
+console.error('Error refreshing models:', error);
+alert('Error refreshing models');
+refreshBtn.disabled = false;
+refreshBtn.textContent = originalText;
+document.querySelectorAll('.model-option').forEach(function(opt) {{
+opt.style.opacity = '1';
+}});
+}}
+}}
+
+document.addEventListener('DOMContentLoaded', function() {{
             const filterInput = document.getElementById('model-filter');
             const modelOptions = document.querySelectorAll('.model-option');
             const radioButtons = document.querySelectorAll('input[type="radio"]');

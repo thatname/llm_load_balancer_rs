@@ -5,7 +5,7 @@ mod load_balancer;
 mod models;
 
 use api::{
-    anthropic_messages_handler, chat_completions_handler, health_handler, models_handler,
+    anthropic_messages_handler, chat_completions_handler, health_handler, models_handler,refresh_models_handler
     openai_models_handler, set_default_get_handler, set_default_post_handler, AppState,
 };
 use axum::{
@@ -58,6 +58,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health_handler))
         .route("/set_default", get(set_default_get_handler))
         .route("/set_default", post(set_default_post_handler))
+        .route("/refresh_models", post(refresh_models_handler))
         .route("/chat", get(chat_ui_handler))
         .layer(
             ServiceBuilder::new()
