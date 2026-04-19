@@ -5,8 +5,8 @@ mod load_balancer;
 mod models;
 
 use api::{
-    anthropic_messages_handler, chat_completions_handler, health_handler, models_handler,refresh_models_handler
-    openai_models_handler, set_default_get_handler, set_default_post_handler, AppState,
+    anthropic_messages_handler, chat_completions_handler, health_handler, models_handler,refresh_models_handler,
+    openai_models_handler, set_default_get_handler, set_default_post_handler, AppState
 };
 use axum::{
     routing::{get, post},
